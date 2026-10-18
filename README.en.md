@@ -7,6 +7,7 @@
 > Plugins keep loading — but the prompt prefix they don't need is dropped **per workspace**. Tool schemas and prompt sections stop reaching the model.
 
 [![version](https://img.shields.io/github/v/tag/M1r0er/dsh-workspace-gate?label=version&color=blue)](https://github.com/M1r0er/dsh-workspace-gate/tags)
+[![npm](https://img.shields.io/npm/v/dsh-workspace-gate?label=npm&color=cb3837)](https://www.npmjs.com/package/dsh-workspace-gate)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![dsh-plugin](https://img.shields.io/badge/topic-dsh--plugin-6f42c1)](https://github.com/topics/dsh-plugin)
 
@@ -112,6 +113,10 @@ This is a standard DSH bundle (`package.json` declares `dsh.bundle.patch`).
 Three ways in, **most recommended first**; all of them end with a **Workspace Plugin Gate** row
 in the plugin manager.
 
+> **Published on npm**: [`dsh-workspace-gate@0.1.1`](https://www.npmjs.com/package/dsh-workspace-gate).
+> On any machine that can reach npm:
+> `dsh plugin --profile <your-profile> add dsh-workspace-gate@0.1.1` — no GitHub needed.
+
 > **Requirement**: `engines.dsh = ^0.2.1-rc.2`. Older DSH runtimes are **refused at install
 > time** by the plugin manager instead of failing later at runtime.
 
@@ -151,6 +156,9 @@ pnpm add github:M1r0er/dsh-workspace-gate
 # C. local checkout (development / debugging)
 git clone https://github.com/M1r0er/dsh-workspace-gate.git
 pnpm add link:<absolute path of the clone>
+
+# D. from npm (available since 0.1.1)
+dsh plugin --profile <your-profile> add dsh-workspace-gate@0.1.1
 ```
 
 > **`--profile <name>` selects which profile directory is modified**: `--profile web` edits

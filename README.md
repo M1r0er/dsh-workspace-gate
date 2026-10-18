@@ -7,6 +7,7 @@
 > 插件照常加载，但**按工作区**把它不该占的提示词前缀摘掉——工具 schema 与提示词段都不再进模型上下文。
 
 [![version](https://img.shields.io/github/v/tag/M1r0er/dsh-workspace-gate?label=version&color=blue)](https://github.com/M1r0er/dsh-workspace-gate/tags)
+[![npm](https://img.shields.io/npm/v/dsh-workspace-gate?label=npm&color=cb3837)](https://www.npmjs.com/package/dsh-workspace-gate)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![dsh-plugin](https://img.shields.io/badge/topic-dsh--plugin-6f42c1)](https://github.com/topics/dsh-plugin)
 
@@ -101,6 +102,10 @@ C:\work\my-project  · 跟随全局 · 已关 1 组 · 共 9 组
 本插件是标准 DSH bundle（`package.json` 里声明 `dsh.bundle.patch`）。
 三种装法，**推荐顺序从上往下**；装好后都会在插件管理页出现「工作区插件门控」这一行。
 
+> **已发布到 npm**：[`dsh-workspace-gate@0.1.1`](https://www.npmjs.com/package/dsh-workspace-gate)。
+> 能访问 npm 的机器可以直接
+> `dsh plugin --profile <your-profile> add dsh-workspace-gate@0.1.1`，不必走 GitHub。
+
 > **版本要求**：`engines.dsh = ^0.2.1-rc.2`。比这更老的 DSH 会被插件管理器**直接拒绝安装**，
 > 而不是装上以后在运行期报错。
 
@@ -139,6 +144,9 @@ pnpm add github:M1r0er/dsh-workspace-gate
 # C. 本地目录（开发/调试）
 git clone https://github.com/M1r0er/dsh-workspace-gate.git
 pnpm add link:<克隆下来的绝对路径>
+
+# D. 从 npm（0.1.1 起可用）
+dsh plugin --profile <your-profile> add dsh-workspace-gate@0.1.1
 ```
 
 > **`--profile <name>` 决定改哪个 profile 目录**：`--profile web` 改的是 `~/.dsh/profiles/web`，
