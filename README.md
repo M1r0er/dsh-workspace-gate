@@ -1,3 +1,7 @@
+<p align="right">
+  <b>简体中文</b> ｜ <a href="./README.en.md">English</a>
+</p>
+
 # dsh-workspace-gate · 工作区插件门控
 
 > 插件照常加载，但**按工作区**把它不该占的提示词前缀摘掉——工具 schema 与提示词段都不再进模型上下文。
@@ -7,9 +11,10 @@
 [![dsh-plugin](https://img.shields.io/badge/topic-dsh--plugin-6f42c1)](https://github.com/topics/dsh-plugin)
 
 一个 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`dsh`）插件。
-**Workspace-scoped plugin gate for DeepSeek Harness** — each plugin keeps loading, but its tool
-schemas and system-prompt sections can be hidden from the model per directory, so projects that
-don't need a plugin stop paying its prompt-prefix tokens on every turn.
+
+它让"要不要让模型看见某个插件"从**全局**下沉到**工作区**：插件依然全部加载、功能随时可用，
+但在你指定的目录下，它的工具 JSON schema 和系统提示词段不再出现在每一次请求里。
+省下的是每轮请求的输入 token，而不是插件的加载开销。
 
 ---
 
