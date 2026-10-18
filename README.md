@@ -141,6 +141,11 @@ git clone https://github.com/M1r0er/dsh-workspace-gate.git
 pnpm add link:<克隆下来的绝对路径>
 ```
 
+> **`--profile <name>` 决定改哪个 profile 目录**：`--profile web` 改的是 `~/.dsh/profiles/web`，
+> 而**桌面版 GUI 跑的是 `desktop` profile** —— 装进 `web`，桌面窗口里看不到，两个 profile 的
+> 依赖和 `dsh.profile.bundles` 互相独立。要装进桌面版，请用它自己的插件页
+> （npm 版 CLI 会拒绝管理 `desktop`）。
+
 > ⚠️ **pnpm 只装依赖，不会把包写进 `dsh.profile.bundles`。**
 > 少这一步插件不会加载。装完必须再做一件事：
 >

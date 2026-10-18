@@ -153,6 +153,12 @@ git clone https://github.com/M1r0er/dsh-workspace-gate.git
 pnpm add link:<absolute path of the clone>
 ```
 
+> **`--profile <name>` selects which profile directory is modified**: `--profile web` edits
+> `~/.dsh/profiles/web`, while the **desktop app runs the `desktop` profile** — installing into
+> `web` is invisible in the desktop window, because the two profiles keep independent
+> dependencies and `dsh.profile.bundles`. To install into the desktop app, use its own plugin page
+> (the npm CLI refuses to manage `desktop`).
+
 > ⚠️ **pnpm only installs the dependency; it does not add the package to
 > `dsh.profile.bundles`.** Without that step the plugin never loads. Do one of:
 >
