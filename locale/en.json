@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Workspace Plugin Gate",
+    "description": "Decide per workspace whether a plugin's tools and system-prompt sections reach the model. Plugins still load; they just stop occupying this workspace's prompt prefix."
+  }
+}

@@ -1,0 +1,8 @@
+node_modules/
+*.log
+*.tmp
+*.tmp.*
+.DS_Store
+Thumbs.db
+probe*.cjs
+.asar-work/

@@ -1,0 +1,8 @@
+# dsh-workspace-gate bundle patch —— 这个组合包引入哪些行。
+#
+# 行写在组合包自己的 patch 里，而不是 profile 的 cordis.patch.yml，这样插件管理
+# 页面才寻址得到它、才能实时开关。关掉这一行 = 门控整体不生效，一切回到原生。
+- insert:
+    - id: workspace-gate
+      name: 'dsh-workspace-gate'
+      config: {}

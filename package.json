@@ -1,0 +1,61 @@
+{
+  "name": "dsh-workspace-gate",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Workspace-scoped plugin gate for DeepSeek Harness: per directory, hide a plugin's tool schemas and system-prompt sections from the model, so unrelated projects stop paying their prompt prefix.",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "cordis",
+    "cordis-plugin",
+    "workspace",
+    "plugin-manager",
+    "context",
+    "token",
+    "prompt"
+  ],
+  "license": "MIT",
+  "author": "M1r0er",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/M1r0er/dsh-workspace-gate.git"
+  },
+  "homepage": "https://github.com/M1r0er/dsh-workspace-gate#readme",
+  "bugs": {
+    "url": "https://github.com/M1r0er/dsh-workspace-gate/issues"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "lib",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md",
+    "LICENSE",
+    "tests"
+  ],
+  "scripts": {
+    "check": "node --check index.js && node --check client.js && node --check lib/policy.mjs",
+    "test": "node --test tests/policy.test.mjs"
+  },
+  "dsh": {
+    "id": "dsh-workspace-gate",
+    "name": "工作区插件门控",
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true
+    }
+  }
+}
