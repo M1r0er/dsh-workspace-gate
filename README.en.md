@@ -109,23 +109,68 @@ Plugin groups                                             [Filter…]
 ## Install
 
 This is a standard DSH bundle (`package.json` declares `dsh.bundle.patch`).
+Three ways in, **most recommended first**; all of them end with a **Workspace Plugin Gate** row
+in the plugin manager.
 
-**Option 1 — install from a local checkout (development)**
+### Option 1 · Let the agent install it (easiest, recommended for newcomers)
+
+Open a new session and send:
+
+> Please install this DSH plugin: `github:M1r0er/dsh-workspace-gate`
+
+The agent calls `plugin_manager`, which does the whole chain — pnpm install → select the bundle →
+activate — and reports `application: applied`. Refresh the page afterwards.
+
+- Prerequisite: the session's preset enables the `plugin_manager` tool. DSH enables it in
+  **Creator** mode only by default; other presets keep it disabled. If the agent says the tool is
+  missing, switch to Creator, or use option 2.
+- Installing host code is a high-privilege action and prompts for a one-off approval.
+
+### Option 2 · Install from the Web plugin page (no terminal)
+
+1. Open the **Plugins** page in DSH;
+2. Use its install entry and put `github:M1r0er/dsh-workspace-gate` in the spec
+   (an absolute path to a local clone works too);
+3. If “Allow these scripts and retry” appears, approve and retry;
+4. Once `dsh-workspace-gate` shows up in the list, refresh the page;
+5. Make sure the **Workspace Plugin Gate** row is **on**.
+
+### Option 3 · Command line (for people who know what they are doing)
 
 ```bash
-git clone https://github.com/M1r0er/dsh-workspace-gate.git
-# inside DSH: plugin_manager install_bundle  target=<absolute path of the clone>
-```
+# A. dsh CLI (when the profile is not Desktop)
+dsh plugin --profile <your-profile> add github:M1r0er/dsh-workspace-gate
 
-**Option 2 — add it to your profile dependencies**
-
-```bash
-cd ~/.dsh/profiles/<your profile>
+# B. pnpm straight from the profile directory
+cd ~/.dsh/profiles/<your-profile>
 pnpm add github:M1r0er/dsh-workspace-gate
+
+# C. local checkout (development / debugging)
+git clone https://github.com/M1r0er/dsh-workspace-gate.git
+pnpm add link:<absolute path of the clone>
 ```
 
-After installation the plugin manager shows a **Workspace Plugin Gate** row. **Turning that row
-off disables the whole gate** and behaviour returns to stock (fail-open).
+> ⚠️ **pnpm only installs the dependency; it does not add the package to
+> `dsh.profile.bundles`.** Without that step the plugin never loads. Do one of:
+>
+> - open the Web plugin page and switch the `dsh-workspace-gate` bundle **on**; or
+> - append `"dsh-workspace-gate"` to the `dsh.profile.bundles` array in
+>   `~/.dsh/profiles/<profile>/package.json`.
+>
+> Then restart DSH (when HMR is off) so the bundle loads.
+
+Afterwards: **turning off that row in the plugin manager disables the gate entirely** and
+behaviour returns to stock (fail-open).
+
+### Common pitfalls
+
+| Symptom | Cause / fix |
+| --- | --- |
+| No row appears after installing | The bundle is not selected — add it to `dsh.profile.bundles` (see option 3) |
+| `already-installed` | The same spec is installed already; Remove it in the plugin page, then install |
+| Desktop says the CLI refuses management | The Desktop profile is Electron-owned; the npm CLI will not manage it — use the Web plugin page |
+| Install stuck on build scripts | pnpm 11 blocks install scripts by default; approve in the dialog and retry |
+| Want it searchable in the marketplace | The repo carries the `dsh-plugin` topic, but marketplace presence needs an awesome-dsh-plugin index entry (a PR) |
 
 ## Usage
 

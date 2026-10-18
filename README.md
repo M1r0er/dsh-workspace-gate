@@ -99,23 +99,65 @@ C:\work\my-project  · 跟随全局 · 已关 1 组 · 共 9 组
 ## 安装
 
 本插件是标准 DSH bundle（`package.json` 里声明 `dsh.bundle.patch`）。
+三种装法，**推荐顺序从上往下**；装好后都会在插件管理页出现「工作区插件门控」这一行。
 
-**方式一：从本地目录安装（开发时）**
+### 方式 1 · 让 AI 帮你装（最省事，推荐新手）
+
+新开一个会话，把这句话发给助手：
+
+> 帮我安装这个 DSH 插件：`github:M1r0er/dsh-workspace-gate`
+
+助手会调用 `plugin_manager` 完成「pnpm 安装 → 选中 bundle → 激活」整条链路，最后告诉你
+`application: applied`。然后刷新页面即可。
+
+- 前提：当前会话的预设启用了 `plugin_manager` 工具。DSH 默认只在 **Creator** 模式下启用它，
+  其它预设默认关闭；如果助手说没有这个工具，切到 Creator 再试，或改用方式 2。
+- 安装 Host 代码属于高权限操作，会请求一次性授权。
+
+### 方式 2 · Web 插件页安装（不碰命令行）
+
+1. 打开 DSH 的 **插件** 页；
+2. 点安装入口，在 spec 里填 `github:M1r0er/dsh-workspace-gate`
+   （也可以填你本地 clone 的**绝对路径**）；
+3. 若弹出 “Allow these scripts and retry”，确认后重试一次；
+4. 列表里出现 `dsh-workspace-gate` 即装好，刷新页面；
+5. 确认「工作区插件门控」这一行是**开启**状态。
+
+### 方式 3 · 命令行（知道自己在做什么的人）
 
 ```bash
-git clone https://github.com/M1r0er/dsh-workspace-gate.git
-# 在 DSH 里：plugin_manager install_bundle  target=<克隆下来的绝对路径>
-```
+# A. 用 dsh CLI（profile 不是 Desktop 时）
+dsh plugin --profile <your-profile> add github:M1r0er/dsh-workspace-gate
 
-**方式二：装进 profile 的依赖**
-
-```bash
-cd ~/.dsh/profiles/<你的 profile>
+# B. 直接进 profile 目录用 pnpm
+cd ~/.dsh/profiles/<your-profile>
 pnpm add github:M1r0er/dsh-workspace-gate
+
+# C. 本地目录（开发/调试）
+git clone https://github.com/M1r0er/dsh-workspace-gate.git
+pnpm add link:<克隆下来的绝对路径>
 ```
 
-装好后插件管理页会出现「工作区插件门控」这一行；**关掉这一行 = 门控整体不生效**，
-行为回到未安装状态（fail-open）。
+> ⚠️ **pnpm 只装依赖，不会把包写进 `dsh.profile.bundles`。**
+> 少这一步插件不会加载。装完必须再做一件事：
+>
+> - 打开 Web 插件页，把 `dsh-workspace-gate` 这个 bundle **打开**；或
+> - 手工在 `~/.dsh/profiles/<profile>/package.json` 的 `dsh.profile.bundles`
+>   数组末尾加 `"dsh-workspace-gate"`。
+>
+> 然后重启 DSH（没有 HMR 时）才会加载。
+
+装好后：**关掉插件管理页里「工作区插件门控」这一行 = 门控整体不生效**，行为回到未安装状态（fail-open）。
+
+### 常见坑
+
+| 现象 | 原因 / 处理 |
+| --- | --- |
+| 装完插件页没有这一行 | bundle 没被选中：按方式 3 的提示把它加进 `dsh.profile.bundles` |
+| 返回 `already-installed` | 同 spec 已装过；先在插件页 Remove 再装 |
+| 桌面版提示 CLI 不接管 | Desktop profile 由 Electron 托管，npm CLI 会拒绝管理它；请用 Web 插件页 |
+| 安装卡在 build scripts | pnpm 11 默认拦截安装脚本；在弹窗里批准后重试 |
+| 想在插件市场里搜到 | 仓库已打 `dsh-plugin` topic，但要在市场出现还需被 awesome-dsh-plugin 索引收录（提交 PR） |
 
 ## 使用
 
