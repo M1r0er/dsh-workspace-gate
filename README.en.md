@@ -112,6 +112,9 @@ This is a standard DSH bundle (`package.json` declares `dsh.bundle.patch`).
 Three ways in, **most recommended first**; all of them end with a **Workspace Plugin Gate** row
 in the plugin manager.
 
+> **Requirement**: `engines.dsh = ^0.2.1-rc.2`. Older DSH runtimes are **refused at install
+> time** by the plugin manager instead of failing later at runtime.
+
 ### Option 1 · Let the agent install it (easiest, recommended for newcomers)
 
 Open a new session and send:
