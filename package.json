@@ -1,6 +1,6 @@
 {
   "name": "dsh-workspace-gate",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "module",
   "description": "Workspace-scoped plugin gate for DeepSeek Harness: per directory, hide a plugin's tool schemas and system-prompt sections from the model, so unrelated projects stop paying their prompt prefix.",
   "keywords": [
@@ -46,7 +46,8 @@
     "README.md",
     "README.en.md",
     "LICENSE",
-    "tests"
+    "tests",
+    "docs"
   ],
   "scripts": {
     "check": "node --check index.js && node --check client.js && node --check lib/policy.mjs",
