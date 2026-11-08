@@ -30,8 +30,10 @@ import {
   normalizeStore,
   pickDir,
   resolveHidden,
+  ruleSpecsFor,
   withAssignments,
   withHidden,
+  withRule,
 } from './lib/policy.mjs';
 
 export const name = 'workspace-gate';
@@ -272,6 +274,8 @@ export function apply(ctx) {
   let attributionCache = null;
   const disposers = new Map();
   const bound = new Map();
+  /** 已销毁的 agent：延迟重试时不能再往里注册。 */
+  const disposedIds = new Set();
 
   const warn = (message) => {
     try {
@@ -503,6 +507,8 @@ export function apply(ctx) {
   };
 
   const buildPlan = async (force = false) => {
+    // 插件清单也有 15s 缓存；启动竞态下缓存里可能是空的，force 时一并刷新。
+    if (force) await refreshPlugins(true);
     const inv = await inventory(force);
     const refs = pluginRefs();
     const plan = attribute({
@@ -568,15 +574,20 @@ export function apply(ctx) {
    * 这里任何异常都必须被吞掉：`agent/created` 是串行且被 await 的，
    * 抛出去就等于这个会话开不起来。
    */
-  const bind = async (agent, carrier) => {
+  const bind = async (agent, carrier, attempt = 0) => {
     try {
-      if (!agent?.id) return;
+      if (!agent?.id || disposedIds.has(agent.id)) return;
       const cwd = agentCwd(ctx, agent);
+      if (!cwd) return;
+      // 两套来源取并集：目录级「隐藏清单」（overrides）+ 插件级「生效工作区」规则（rules）。
+      // 规则的意义是"没被列进生效工作区的一律隐藏"，所以新工作区默认就是关闭的。
       const key = pickDir(cwd, Object.keys(store.overrides));
-      if (!key) return;
+      const specs = new Set(key ? store.overrides[key] ?? [] : []);
+      for (const spec of ruleSpecsFor(store, cwd)) specs.add(spec);
 
-      const plan = await buildPlan();
-      const hidden = resolveHidden(store.overrides[key] ?? [], plan);
+      // 重试时强制刷新：启动瞬间拿到的空清单会被缓存 15s，不刷就永远空。
+      const plan = await buildPlan(attempt > 0);
+      const hidden = resolveHidden([...specs], plan);
       const visible = new Set([
         ...plan.groups.flatMap((g) => g.tools),
         ...plan.unassigned.tools,
@@ -585,7 +596,15 @@ export function apply(ctx) {
       const sections = hidden.sections.filter((n) => plan.sectionText.has(n));
 
       if (!deny.length && !sections.length) {
-        bound.set(agent.id, { cwd, key, deny: [], sections: [], skipped: [], at: Date.now() });
+        // 有规则要隐藏，却一个都没解析出来 —— 多半是启动竞态（tools / pluginManager 未就绪）。
+        // 静默放行会一直错到会话结束，所以退避重试几次；重试用尽才记录空绑定。
+        if (specs.size > 0 && attempt < 3) {
+          setTimeout(() => {
+            bind(agent, carrier, attempt + 1).catch(() => {});
+          }, 500 * (attempt + 1));
+          return;
+        }
+        bound.set(agent.id, { cwd, key, deny: [], sections: [], skipped: [], attempt, at: Date.now() });
         return;
       }
 
@@ -636,7 +655,7 @@ export function apply(ctx) {
       });
 
       disposers.set(agent.id, off);
-      bound.set(agent.id, { cwd, key, deny: applied, sections, skipped, at: Date.now() });
+      bound.set(agent.id, { cwd, key, deny: applied, sections, skipped, attempt, at: Date.now() });
       if (skipped.length) warn(`${skipped.length} 个名字无法门控（不在全局面）`);
     } catch (error) {
       warn(`绑定 agent 失败：${error?.message ?? error}`);
@@ -645,13 +664,15 @@ export function apply(ctx) {
 
   ctx.on('agent/created', async (payload) => {
     const agent = payload?.agent ?? payload;
-    await bind(agent, payload);
+    if (agent?.id) disposedIds.delete(agent.id);
+    await bind(agent, payload, 0);
   });
 
   ctx.on('agent/disposed', (payload) => {
     const agent = payload?.agent ?? payload;
     const id = agent?.id;
     if (!id) return;
+    disposedIds.add(id);
     try {
       disposers.get(id)?.();
     } catch {
@@ -723,6 +744,7 @@ export function apply(ctx) {
       dirs: [...dirs.values()].sort((a, b) => String(a.path).localeCompare(String(b.path))),
       overrides: store.overrides,
       assignments: store.assignments,
+      rules: store.rules,
       reserved: [...RESERVED],
       presetScopeCount: plan.presetScopeCount,
       recent: [...bound.entries()]
@@ -746,6 +768,24 @@ export function apply(ctx) {
         const dir = String(body?.dir ?? '').trim();
         if (!dir) return json(res, 400, { error: 'dir 不能为空' });
         store = withHidden(store, dir, Array.isArray(body?.hidden) ? body.hidden : []);
+        saveStore(store);
+        return json(res, 200, { ok: true, ...(await state(false)) });
+      }
+
+      if (tail === 'rule') {
+        if (req.method !== 'POST') return json(res, 405, { error: 'method_not_allowed' });
+        const body = JSON.parse((await readBody(req)) || '{}');
+        const spec = String(body?.spec ?? '').trim();
+        if (!/^(plugin|tool|section):./.test(spec)) return json(res, 400, { error: 'spec 必须是 plugin:/tool:/section:' });
+        if (!Object.prototype.hasOwnProperty.call(body, 'only')) {
+          return json(res, 400, { error: '缺 only：数组 = 生效工作区，null = 删除规则' });
+        }
+        let only = null;
+        if (body.only !== null) {
+          if (!Array.isArray(body.only)) return json(res, 400, { error: 'only 必须是数组或 null' });
+          only = body.only;
+        }
+        store = withRule(store, spec, only);
         saveStore(store);
         return json(res, 200, { ok: true, ...(await state(false)) });
       }
@@ -793,12 +833,21 @@ export function apply(ctx) {
         properties: {
           action: {
             type: 'string',
-            enum: ['status', 'list', 'set', 'diagnose'],
+            enum: ['status', 'list', 'set', 'rule', 'diagnose'],
             description: '要做什么。',
           },
           dir: {
             type: 'string',
             description: 'action=set 时必填：要改配置的目录（绝对路径，子目录会继承）。',
+          },
+          spec: {
+            type: 'string',
+            description: "action=rule 时必填：plugin:<id> / tool:<name> / section:<name>。",
+          },
+          only: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'action=rule：该 spec 生效的工作区绝对路径；省略 = 删除规则、回到默认。',
           },
           hide: {
             type: 'array',
@@ -848,6 +897,7 @@ export function apply(ctx) {
             pluginSample: pluginRefs().slice(0, 8),
             storePath: storeFile(),
             overrides: store.overrides,
+            rules: store.rules,
             bound: [...bound.entries()].map(([id, info]) => ({ sessionId: id, ...info })),
           });
         }
@@ -879,6 +929,17 @@ export function apply(ctx) {
           store = withHidden(store, key, [...current]);
           saveStore(store);
           return safeJson({ ok: true, dir: key, hidden: store.overrides[key] ?? [] });
+        }
+
+        if (action === 'rule') {
+          const spec = String(args?.spec ?? '').trim();
+          if (!/^(plugin|tool|section):./.test(spec)) {
+            return safeJson({ ok: false, error: 'action=rule 需要 spec（plugin:/tool:/section:）' });
+          }
+          const only = Array.isArray(args?.only) ? args.only.map((d) => String(d).trim()).filter(Boolean) : null;
+          store = withRule(store, spec, only);
+          saveStore(store);
+          return safeJson({ ok: true, spec, rule: store.rules?.[spec] ?? null });
         }
 
         const snapshot = await state(false);

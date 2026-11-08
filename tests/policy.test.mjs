@@ -15,6 +15,8 @@ import {
   tokensOf,
   withAssignments,
   withHidden,
+  withRule,
+  ruleSpecsFor,
 } from '../lib/policy.mjs';
 
 test('normalizeDir 统一分隔符、去尾斜杠、转小写', () => {
@@ -166,7 +168,7 @@ test('normalizeStore：逐条清洗、去重、排序、归一化键', () => {
       'C:\\Bad': 'not-an-array',
     },
   });
-  assert.equal(store.version, 1);
+  assert.equal(store.version, 2);
   assert.deepEqual(store.overrides, { 'd:/projects/api': ['tool:a', 'tool:b'] });
 });
 
@@ -275,5 +277,50 @@ test('applyAssignments：没有 assignments 时原样返回', () => {
   const plan = { groups: [], unassigned: { tools: ['a'], sections: [] } };
   assert.equal(applyAssignments(plan, {}), plan);
   assert.equal(applyAssignments(plan, undefined), plan);
+});
+
+// ── rules：插件视角的「生效工作区」 ────────────────────────────────
+
+test('withRule：写入、归一化、删除', () => {
+  const one = withRule(emptyStore(), 'plugin:zotero', ['D:\\Project\\AI\\DSH\\科研']);
+  assert.deepEqual(one.rules, { 'plugin:zotero': { only: ['d:/project/ai/dsh/科研'] } });
+
+  const two = withRule(one, 'plugin:zotero', ['D:\\A', 'D:\\A']);
+  assert.deepEqual(two.rules['plugin:zotero'].only, ['d:/a']);
+
+  // null = 删除规则；空数组 = 处处不生效，两者不能混
+  assert.deepEqual(withRule(two, 'plugin:zotero', null).rules, {});
+  assert.deepEqual(withRule(two, 'plugin:zotero', []).rules['plugin:zotero'].only, []);
+
+  // 非法 spec 不写入
+  assert.deepEqual(withRule(emptyStore(), 'nonsense', ['D:\\A']).rules, {});
+});
+
+test('ruleSpecsFor：只在声明的目录（含子目录）不隐藏', () => {
+  const store = withRule(emptyStore(), 'plugin:zotero', ['D:\\Project\\AI\\DSH\\科研']);
+  assert.deepEqual(ruleSpecsFor(store, 'D:\\Project\\AI\\DSH\\科研'), []);
+  assert.deepEqual(ruleSpecsFor(store, 'D:\\Project\\AI\\DSH\\科研\\papers'), []);
+  assert.deepEqual(ruleSpecsFor(store, 'D:\\Project\\AI\\DSH\\电控学习'), ['plugin:zotero']);
+  assert.deepEqual(ruleSpecsFor(store, 'E:\\brand-new'), ['plugin:zotero']);
+  assert.deepEqual(ruleSpecsFor(store, ''), []);
+});
+
+test('ruleSpecsFor：only 为空数组时处处隐藏', () => {
+  const store = withRule(emptyStore(), 'plugin:scholarly', []);
+  assert.deepEqual(ruleSpecsFor(store, 'D:\\Project\\AI\\DSH\\科研'), ['plugin:scholarly']);
+});
+
+test('normalizeStore：保留 rules，丢弃坏形状，且不影响 overrides', () => {
+  const store = normalizeStore({
+    version: 2,
+    overrides: { 'D:\\A': ['tool:x'] },
+    rules: {
+      'plugin:zotero': { only: ['D:\\科研'] },
+      'plugin:bad': 'not-a-rule',
+      'bogus:shape': { only: ['D:\\B'] },
+    },
+  });
+  assert.deepEqual(store.rules, { 'plugin:zotero': { only: ['d:/科研'] } });
+  assert.deepEqual(store.overrides, { 'd:/a': ['tool:x'] });
 });
 
