@@ -21,6 +21,22 @@ window.__ModuleLoader__.load({
 
     const zh = {
       tab: '按工作区',
+      tabPlugin: '按插件',
+      leadPlugin: '选一个插件，勾选它「生效的工作区」：勾选的照常可用，其余工作区（包括以后新建的）隐藏它的工具与提示词段。',
+      pluginList: '插件',
+      ruleDefault: '默认：全部工作区可见',
+      ruleOnly: (n, m) => `生效 ${n}/${m}`,
+      effective: '生效工作区（勾选 = 这个插件在这里可用）',
+      modeAll: '所有工作区可见',
+      modeOnly: '只在勾选的工作区',
+      onlyHint: '没被勾选的工作区——包括以后新建的——都会隐藏这个插件。',
+      selectAll: '全选',
+      selectNone: '全不选',
+      addWorkspace: '添加工作区路径',
+      resetRule: '恢复默认（不设规则）',
+      savedRule: '已保存，对新会话生效',
+      noPlugins: '没有可配置的插件组。',
+      pluginPick: '先选一个插件',
       lead: '插件照常加载；勾掉的插件，它的工具与提示词段不再进入这个目录的请求。',
       rescan: '重新扫描',
       workspaces: '工作区',
@@ -72,6 +88,22 @@ window.__ModuleLoader__.load({
 
     const en = {
       tab: 'By workspace',
+      tabPlugin: 'By plugin',
+      leadPlugin: 'Pick a plugin and tick the workspaces where it stays active. Everything else — including workspaces created later — hides its tools and prompt sections.',
+      pluginList: 'Plugins',
+      ruleDefault: 'Default: visible everywhere',
+      ruleOnly: (n, m) => `active ${n}/${m}`,
+      effective: 'Active workspaces (ticked = the plugin is usable there)',
+      modeAll: 'Visible in every workspace',
+      modeOnly: 'Only in ticked workspaces',
+      onlyHint: 'Any workspace not ticked — including ones created later — hides this plugin.',
+      selectAll: 'All',
+      selectNone: 'None',
+      addWorkspace: 'Add workspace path',
+      resetRule: 'Reset to default (no rule)',
+      savedRule: 'Saved. Applies to new sessions.',
+      noPlugins: 'No plugin group to configure.',
+      pluginPick: 'Pick a plugin first',
       lead: 'Plugins still load; whatever you switch off keeps its tools and prompt sections out of this directory’s requests.',
       rescan: 'Rescan',
       workspaces: 'Workspaces',
@@ -1029,6 +1061,357 @@ window.__ModuleLoader__.load({
       };
     }
 
+    /**
+     * 「按插件」面板：先选插件，再勾它在哪些工作区生效。
+     * 数据写进 store.rules（`plugin:<id>` → `{ only: [dir...] }`）：
+     * 没被勾选的工作区——包括以后新建的——由 Host 在 agent 建立时隐藏。
+     */
+    function buildPluginPanel(t) {
+      return function PluginPanel() {
+        const [snapshot, setSnapshot] = React.useState(null);
+        const [error, setError] = React.useState(null);
+        const [spec, setSpec] = React.useState('');
+        const [only, setOnly] = React.useState([]);
+        const [mode, setMode] = React.useState('all');
+        const [filter, setFilter] = React.useState('');
+        const [manual, setManual] = React.useState('');
+        const [busy, setBusy] = React.useState(false);
+        const [message, setMessage] = React.useState('');
+
+        React.useEffect(() => {
+          let alive = true;
+          fetch(`${API}/state`)
+            .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
+            .then((data) => {
+              if (alive) setSnapshot(data);
+            })
+            .catch((cause) => {
+              if (alive) setError(String(cause && cause.message ? cause.message : cause));
+            });
+          return () => {
+            alive = false;
+          };
+        }, []);
+
+        const allGroups = React.useMemo(() => (snapshot && snapshot.groups) || [], [snapshot]);
+        const groups = React.useMemo(() => {
+          const q = filter.trim().toLowerCase();
+          if (!q) return allGroups;
+          return allGroups.filter(
+            (g) => g.id.toLowerCase().includes(q) || String(g.title || '').toLowerCase().includes(q),
+          );
+        }, [allGroups, filter]);
+
+        React.useEffect(() => {
+          if (spec || !allGroups.length) return;
+          setSpec(allGroups[0].id);
+        }, [spec, allGroups]);
+
+        const rules = (snapshot && snapshot.rules) || {};
+        const ruleKey = spec ? `plugin:${spec}` : '';
+        const rule = ruleKey ? rules[ruleKey] : undefined;
+        const ruleDirs = rule && Array.isArray(rule.only) ? rule.only : null;
+
+        const dirs = React.useMemo(() => {
+          const list = (snapshot && snapshot.dirs) || [];
+          const known = new Set(list.map((d) => d.key));
+          const extra = (ruleDirs || [])
+            .filter((key) => !known.has(key))
+            .map((key) => ({ key, path: key, title: '', source: 'manual' }));
+          return [...list, ...extra];
+        }, [snapshot, ruleDirs]);
+
+        const dirKeys = React.useMemo(() => dirs.map((d) => d.key), [dirs]);
+
+        React.useEffect(() => {
+          if (!spec) return;
+          setMode(ruleDirs ? 'only' : 'all');
+          setOnly(ruleDirs ? [...ruleDirs] : []);
+          setMessage('');
+        }, [spec, ruleKey, ruleDirs]);
+
+        const savedMode = ruleDirs ? 'only' : 'all';
+        const savedOnly = React.useMemo(() => (ruleDirs ? [...ruleDirs].sort() : []), [ruleDirs]);
+        const dirty =
+          mode !== savedMode ||
+          (mode === 'only' && JSON.stringify([...only].sort()) !== JSON.stringify(savedOnly));
+
+        const post = (path, body) =>
+          fetch(`${API}${path}`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(body || {}),
+          }).then((res) =>
+            res.ok
+              ? res.json()
+              : res
+                  .json()
+                  .then((b) => Promise.reject(new Error((b && b.error) || `HTTP ${res.status}`)))
+                  .catch((err) => Promise.reject(err instanceof Error ? err : new Error(`HTTP ${res.status}`))),
+          );
+
+        const sync = (promise) =>
+          promise
+            .then((data) => {
+              if (data && data.groups) setSnapshot(data);
+              setMessage(t('savedRule'));
+            })
+            .catch((cause) => setMessage(t('failed') + String(cause && cause.message ? cause.message : cause)))
+            .finally(() => setBusy(false));
+
+        const saveRule = () => {
+          if (!ruleKey || busy) return;
+          setBusy(true);
+          setMessage('');
+          sync(post('/rule', { spec: ruleKey, only: mode === 'only' ? only : null }));
+        };
+
+        const resetRule = () => {
+          if (!ruleKey || busy) return;
+          setBusy(true);
+          setMessage('');
+          sync(post('/rule', { spec: ruleKey, only: null }));
+        };
+
+        const toggle = (key, on) => {
+          setOnly((prev) => (on ? [...new Set([...prev, key])].sort() : prev.filter((item) => item !== key)));
+        };
+        const setAll = (on) => setOnly(on ? [...dirKeys] : []);
+
+        const addManual = () => {
+          const value = manual.trim();
+          if (!value) return;
+          const key = value.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+          setOnly((prev) => [...new Set([...prev, key])].sort());
+          setManual('');
+        };
+
+        const modeButton = (value, label) =>
+          h(
+            'button',
+            {
+              key: value,
+              type: 'button',
+              disabled: busy,
+              onClick: () => setMode(value),
+              style: {
+                ...S.ghost,
+                padding: '4px 12px',
+                borderRadius: 999,
+                border: `1px solid ${mode === value ? T.brand : T.border1}`,
+                color: mode === value ? T.label : T.muted,
+                background: mode === value ? T.bg2 : 'transparent',
+              },
+            },
+            label,
+          );
+
+        if (error) {
+          return h('div', { style: { padding: '24px 2px', color: T.error, fontSize: 13 } }, t('loadFailed') + error);
+        }
+        if (!snapshot) {
+          return h('div', { style: { padding: '24px 2px', color: T.muted, fontSize: 13 } }, t('loading'));
+        }
+
+        const rows = groups.map((g) => {
+          const key = `plugin:${g.id}`;
+          const r = rules[key];
+          const selected = g.id === spec;
+          return h(
+            'div',
+            {
+              key,
+              onClick: () => setSpec(g.id),
+              style: {
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                padding: '8px 10px',
+                borderRadius: 8,
+                cursor: 'pointer',
+                background: selected ? T.bg2 : 'transparent',
+                border: `1px solid ${selected ? T.border2 : 'transparent'}`,
+              },
+              onMouseEnter: (e) => {
+                if (!selected) e.currentTarget.style.background = T.bg1;
+              },
+              onMouseLeave: (e) => {
+                if (!selected) e.currentTarget.style.background = 'transparent';
+              },
+            },
+            [
+              h(
+                'div',
+                {
+                  key: 'ic',
+                  style: {
+                    flex: '0 0 auto',
+                    width: 28,
+                    height: 28,
+                    borderRadius: 8,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color: T.muted,
+                    background: T.bg2,
+                  },
+                },
+                monogram(g.title || g.id),
+              ),
+              h('div', { key: 'tx', style: { minWidth: 0, flex: 1 } }, [
+                h('div', { key: 't', style: S.title }, g.title || g.id),
+                h(
+                  'div',
+                  { key: 'd', style: S.desc },
+                  [g.id, t('tools', g.tools.length), t('sections', g.sections.length)].join(' · '),
+                ),
+              ]),
+              h(
+                'span',
+                { key: 'b', style: { ...S.tag, color: r ? T.brand : T.muted } },
+                r ? t('ruleOnly', (r.only || []).length, dirKeys.length) : t('ruleDefault'),
+              ),
+            ],
+          );
+        });
+
+        const dirRows = dirs.map((d) => {
+          const on = only.includes(d.key);
+          const label = d.title || String(d.path).split(/[\\/]/).pop() || d.path;
+          return h(
+            'label',
+            {
+              key: d.key,
+              title: d.path,
+              style: { display: 'flex', alignItems: 'center', gap: 8, padding: '4px 10px', borderRadius: 8, cursor: busy ? 'default' : 'pointer', fontSize: 12, color: T.label },
+            },
+            [
+              h('input', {
+                key: 'i',
+                type: 'checkbox',
+                checked: on,
+                disabled: busy || mode === 'all',
+                onChange: (event) => toggle(d.key, event.target.checked === true),
+                style: { accentColor: T.brand, margin: 0, cursor: busy || mode === 'all' ? 'default' : 'pointer' },
+              }),
+              h('span', { key: 'n', style: S.mono }, label),
+              h(
+                'span',
+                { key: 'p', style: { ...S.desc, marginLeft: 'auto', maxWidth: '55%' } },
+                d.path,
+              ),
+            ],
+          );
+        });
+
+        return h('div', { style: { display: 'flex', flexDirection: 'column', gap: 10 } }, [
+          h('div', { key: 'lead', style: { fontSize: 12, color: T.muted, lineHeight: '18px' } }, t('leadPlugin')),
+
+          h('div', { key: 'head', style: { display: 'flex', alignItems: 'center', gap: 12 } }, [
+            h('span', { key: 'g', style: { fontSize: 12, color: T.muted } }, t('pluginList')),
+            h('span', { key: 'f', style: { marginLeft: 'auto', display: 'flex' } }, [
+              h('input', {
+                key: 'i',
+                type: 'text',
+                value: filter,
+                placeholder: t('filter'),
+                onChange: (event) => setFilter(event.target.value),
+                style: { ...S.input, width: 180, fontSize: 11 },
+              }),
+            ]),
+          ]),
+
+          h(
+            'div',
+            { key: 'plist', style: { display: 'flex', flexDirection: 'column', maxHeight: 260, overflowY: 'auto', borderRadius: 10 } },
+            rows.length
+              ? rows
+              : [h('div', { key: 'e', style: { padding: '14px 2px', fontSize: 12, color: T.muted } }, t('noPlugins'))],
+          ),
+
+          h('div', { key: 'sep', style: { height: 1, background: T.border1, margin: '2px 0' } }),
+
+          spec
+            ? h('div', { key: 'detail', style: { display: 'flex', flexDirection: 'column', gap: 6 } }, [
+                h('div', { key: 'mode', style: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' } }, [
+                  modeButton('all', t('modeAll')),
+                  modeButton('only', t('modeOnly')),
+                ]),
+                mode === 'only'
+                  ? h('div', { key: 't', style: { display: 'flex', alignItems: 'center', gap: 10 } }, [
+                      h('span', { key: 'l', style: { fontSize: 12, color: T.label } }, t('effective')),
+                      h(
+                        'span',
+                        { key: 'a' },
+                        [
+                          h('button', { key: 'all', type: 'button', style: { ...S.ghost, padding: '0 6px' }, disabled: busy, onClick: () => setAll(true) }, t('selectAll')),
+                          h('button', { key: 'none', type: 'button', style: { ...S.ghost, padding: '0 6px' }, disabled: busy, onClick: () => setAll(false) }, t('selectNone')),
+                        ],
+                      ),
+                    ])
+                  : null,
+                mode === 'only'
+                  ? h('div', { key: 'hint', style: { fontSize: 11, color: T.muted, lineHeight: '16px' } }, t('onlyHint'))
+                  : null,
+                h(
+                  'div',
+                  {
+                    key: 'dirs',
+                    style: {
+                      display: 'flex',
+                      flexDirection: 'column',
+                      maxHeight: 260,
+                      overflowY: 'auto',
+                      borderRadius: 8,
+                      opacity: mode === 'all' ? 0.45 : 1,
+                    },
+                  },
+                  dirRows.length
+                    ? dirRows
+                    : [h('div', { key: 'e', style: { padding: '12px 2px', fontSize: 12, color: T.muted } }, t('noneYet'))],
+                ),
+                h('div', { key: 'add', style: { display: 'flex', alignItems: 'center', gap: 8 } }, [
+                  h('input', {
+                    key: 'i',
+                    type: 'text',
+                    value: manual,
+                    placeholder: t('addWorkspace'),
+                    onChange: (event) => setManual(event.target.value),
+                    onKeyDown: (event) => {
+                      if (event.key === 'Enter') addManual();
+                    },
+                    style: { ...S.input, flex: 1, fontSize: 11 },
+                  }),
+                  h('button', { key: 'b', type: 'button', style: S.ghost, disabled: busy, onClick: addManual }, t('addDir')),
+                ]),
+              ])
+            : h('div', { key: 'pick', style: { fontSize: 12, color: T.muted } }, t('pluginPick')),
+
+          h('div', { key: 'actions', style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } }, [
+            h(
+              'button',
+              {
+                key: 'save',
+                type: 'button',
+                style: { ...S.primary, opacity: busy || !spec || !dirty ? 0.5 : 1, cursor: busy || !spec || !dirty ? 'default' : 'pointer' },
+                disabled: busy || !spec || !dirty,
+                onClick: saveRule,
+              },
+              busy ? t('saving') : t('save'),
+            ),
+            h(
+              'button',
+              { key: 'reset', type: 'button', style: S.ghost, disabled: busy || !spec || !rule, onClick: resetRule },
+              t('resetRule'),
+            ),
+            message ? h('span', { key: 'm', style: { fontSize: 11, color: T.success } }, message) : null,
+          ]),
+        ]);
+      };
+    }
+
     return {
       name: 'workspace-gate',
       inject: ['slots'],
@@ -1059,6 +1442,7 @@ window.__ModuleLoader__.load({
         };
 
         const Panel = buildPanel(ctx, t);
+        const PluginPanel = buildPluginPanel(t);
 
         try {
           ctx.inject(['locale'], (scope) => {
@@ -1091,6 +1475,24 @@ window.__ModuleLoader__.load({
           );
         } catch (error) {
           console.error('[workspace-gate] register plugins.tab failed:', error);
+        }
+
+        try {
+          ctx.slots.inject('plugins.tab', () =>
+            ctx.slots.register(
+              {
+                name: 'plugins.tab',
+                id: `${NS}-plugins`,
+                order: 41,
+                label: () => t('tabPlugin'),
+                locale: NS,
+                inject: () => ({ t }),
+              },
+              PluginPanel,
+            ),
+          );
+        } catch (error) {
+          console.error('[workspace-gate] register plugins.tab (by plugin) failed:', error);
         }
       },
     };
