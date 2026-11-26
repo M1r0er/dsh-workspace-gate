@@ -267,6 +267,8 @@ export function apply(ctx) {
   let pluginList = [];
   let bundleList = [];
   let pluginFetchedAt = 0;
+  /** 正在飞的清单读取：并发的 agent/created 共用同一次，不各拉一遍。 */
+  let pluginLoading = null;
   let inventoryCache = null;
   let inventoryAt = 0;
   let attributionCache = null;
@@ -325,9 +327,9 @@ export function apply(ctx) {
     }
   };
 
-  const refreshPlugins = async (force = false) => {
-    if (!force && Date.now() - pluginFetchedAt < INVENTORY_TTL_MS) return pluginList;
+  const loadPlugins = async () => {
     attributionCache = null;
+    let ok = false;
     try {
       const manager = get('pluginManager');
       const list = manager?.listPlugins ? await manager.listPlugins() : [];
@@ -335,13 +337,34 @@ export function apply(ctx) {
       // bundle 清单用来判来源：availability=profile 就是用户装的，installation 是随 dsh 来的
       const bundles = manager?.listBundles ? await manager.listBundles() : [];
       bundleList = Array.isArray(bundles) ? bundles : [];
+      ok = true;
     } catch (error) {
       warn(`读取插件清单失败：${error?.message ?? error}`);
       pluginList = [];
       bundleList = [];
     }
-    pluginFetchedAt = Date.now();
+    // 失败时**不**推进时间戳：否则一次瞬时错误会被 TTL 放大成 15 秒的静默失效。
+    // 保持旧时间戳，下一次调用会立刻重试，而不是继续拿空清单建计划。
+    if (ok) pluginFetchedAt = Date.now();
     return pluginList;
+  };
+
+  const refreshPlugins = async (force = false) => {
+    if (!force && Date.now() - pluginFetchedAt < INVENTORY_TTL_MS) return pluginList;
+    const inFlight = pluginLoading;
+    if (inFlight) {
+      // 在飞的那次已经能覆盖这次请求就直接共用（并发建立多个 agent 时只读一次）。
+      if (!force || inFlight.forced) return inFlight.promise;
+      // 这次要强制、飞着的却是普通读取：等它落地，再看是否仍然需要重读。
+      await inFlight.promise.catch(() => {});
+      if (Date.now() - pluginFetchedAt < INVENTORY_TTL_MS) return pluginList;
+    }
+    const entry = { forced: force, promise: null };
+    entry.promise = loadPlugins().finally(() => {
+      if (pluginLoading === entry) pluginLoading = null;
+    });
+    pluginLoading = entry;
+    return entry.promise;
   };
 
   /** 一条插件行属于哪个 bundle（按 moduleName，其次 entryId）。 */
@@ -575,6 +598,16 @@ export function apply(ctx) {
       const key = pickDir(cwd, Object.keys(store.overrides));
       if (!key) return;
 
+      // 必须自己等清单：`apply()` 末尾那次 refreshPlugins 是 fire-and-forget，
+      // 而 `agent/created` 几乎紧接着就来了。不 await 就会用空清单建计划，
+      // resolveHidden() 按 id 查不到组 → 静默跳过 → 门控整体失效（议题 #1）。
+      //
+      // 但别每次都强制：`buildPlan()` 的 inventory 有自己的 15s 缓存，而清单读取
+      // 是"每次调用都直读 Loader"、没有缓存（readPluginInventory 明确如此）。
+      // 所以只在"没有清单"或"清单已过期"时刷新，其余交给 TTL，避免每个新会话都付全价。
+      if (!pluginList.length || Date.now() - pluginFetchedAt >= INVENTORY_TTL_MS) {
+        await refreshPlugins(true);
+      }
       const plan = await buildPlan();
       const hidden = resolveHidden(store.overrides[key] ?? [], plan);
       const visible = new Set([
@@ -585,6 +618,29 @@ export function apply(ctx) {
       const sections = hidden.sections.filter((n) => plan.sectionText.has(n));
 
       if (!deny.length && !sections.length) {
+        // 配了东西却一样都没隐藏成，是这个插件最危险的失败形态：用户以为生效了。
+        // 议题 #1 就是这样静默过去的。三种原因要分开说，否则会把排查引向错误方向。
+        const specs = store.overrides[key] ?? [];
+        if (specs.length) {
+          if (!pluginList.length) {
+            warn(
+              `工作区 ${key} 配了 ${specs.length} 条隐藏，但插件清单为空` +
+                `（读取失败或 pluginManager 不可用），本次未应用任何门控`,
+            );
+          } else {
+            const known = new Set(plan.groups.map((g) => String(g.id).toLowerCase()));
+            const missing = specs.filter((spec) => {
+              if (!spec.startsWith('plugin:')) return false;
+              return !known.has(spec.slice('plugin:'.length).toLowerCase());
+            });
+            warn(
+              `工作区 ${key} 配了 ${specs.length} 条隐藏，但没有一条命中可见面` +
+                (missing.length
+                  ? `；其中 ${missing.length} 条指向不存在的插件：${missing.join(', ')}`
+                  : '；插件存在但它的工具/段落都不在可见面上'),
+            );
+          }
+        }
         bound.set(agent.id, { cwd, key, deny: [], sections: [], skipped: [], at: Date.now() });
         return;
       }
